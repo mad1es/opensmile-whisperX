@@ -155,9 +155,22 @@ def main():
     parser.add_argument(
         '--whisper-device',
         type=str,
-        default='cpu',
+        default=None,
         choices=['cpu', 'cuda'],
-        help='Устройство для Whisper'
+        help='Устройство для Whisper (None = автоопределение, рекомендуется для GPU)'
+    )
+    parser.add_argument(
+        '--whisper-batch-size',
+        type=int,
+        default=None,
+        help='Размер батча для Whisper (None = автоопределение, для RTX 4090 рекомендуется 64)'
+    )
+    parser.add_argument(
+        '--whisper-compute-type',
+        type=str,
+        default=None,
+        choices=['int8', 'float16', 'float32'],
+        help='Тип вычислений для Whisper (None = автоопределение)'
     )
     
     args = parser.parse_args()
@@ -217,9 +230,18 @@ def main():
             '--input-dir', str(base_dir / 'audio_wav'),
             '--output-dir', str(base_dir / 'transcripts'),
             '--model', args.whisper_model,
-            '--language', args.whisper_language,
-            '--device', args.whisper_device
+            '--language', args.whisper_language
         ]
+        
+        if args.whisper_device:
+            transcribe_cmd.extend(['--device', args.whisper_device])
+        
+        if args.whisper_batch_size:
+            transcribe_cmd.extend(['--batch-size', str(args.whisper_batch_size)])
+        
+        if args.whisper_compute_type:
+            transcribe_cmd.extend(['--compute-type', args.whisper_compute_type])
+        
         if args.mode:
             transcribe_cmd.extend(['--mode', args.mode])
         

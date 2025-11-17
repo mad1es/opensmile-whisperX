@@ -16,6 +16,7 @@ import numpy as np
 def find_smilextract_binary(opensmile_dir: str = "opensmile") -> str:
     """
     Находит путь к бинарнику SMILExtract.
+    Поддерживает как Windows (.exe), так и Linux/MacOS бинарники.
     
     Args:
         opensmile_dir: Директория с openSMILE
@@ -23,18 +24,29 @@ def find_smilextract_binary(opensmile_dir: str = "opensmile") -> str:
     Returns:
         Путь к SMILExtract
     """
+    import platform
+    
+    is_windows = platform.system() == 'Windows'
+    binary_name = "SMILExtract.exe" if is_windows else "SMILExtract"
+    
     possible_paths = [
-        os.path.join(opensmile_dir, "build", "progsrc", "smilextract", "SMILExtract"),
-        os.path.join(opensmile_dir, "build", "bin", "SMILExtract"),
-        "SMILExtract"
+        os.path.join(opensmile_dir, "build", "progsrc", "smilextract", "Release", binary_name),
+        os.path.join(opensmile_dir, "build", "progsrc", "smilextract", binary_name),
+        os.path.join(opensmile_dir, "build", "bin", binary_name),
+        os.path.join(opensmile_dir, "bin", binary_name),
+        binary_name
     ]
     
     for path in possible_paths:
-        if os.path.exists(path) and os.access(path, os.X_OK):
-            return os.path.abspath(path)
+        if os.path.exists(path):
+            if is_windows or os.access(path, os.X_OK):
+                return os.path.abspath(path)
     
     raise FileNotFoundError(
-        f"SMILExtract не найден. Проверьте пути: {possible_paths}"
+        f"SMILExtract не найден. Проверьте пути:\n" + 
+        "\n".join([f"  - {p}" for p in possible_paths]) +
+        f"\n\nДля Windows: убедитесь, что SMILExtract.exe собран или скачан готовый бинарник.\n"
+        f"См. INSTALL_OPENSMILE_WINDOWS.md для инструкций по установке."
     )
 
 

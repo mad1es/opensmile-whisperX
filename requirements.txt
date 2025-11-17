@@ -8,6 +8,10 @@ soundfile>=0.12.1
 
 # Транскрипция
 whisperx>=3.1.1
+# ВАЖНО: Для GPU поддержки установите PyTorch с CUDA отдельно:
+# Windows: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+# Linux: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+# Или используйте официальный установщик: https://pytorch.org/get-started/locally/
 torch>=2.0.0
 torchaudio>=2.0.0
 

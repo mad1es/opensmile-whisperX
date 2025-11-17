@@ -75,7 +75,9 @@ sudo apt-get install ffmpeg
 **Windows:**
 Скачайте с [официального сайта](https://ffmpeg.org/download.html) и добавьте в PATH.
 
-### 3. Проверка openSMILE
+### 3. Установка openSMILE
+
+#### Linux/macOS:
 
 Убедитесь, что openSMILE собран и бинарник доступен:
 ```bash
@@ -89,6 +91,14 @@ mkdir build && cd build
 cmake ..
 make
 ```
+
+#### Windows:
+
+**Рекомендуется:** Используйте готовые бинарники с [GitHub Releases](https://github.com/audeering/opensmile/releases).
+
+**Альтернатива:** Соберите из исходников (требуется Visual Studio 2017+ и CMake 3.15+).
+
+**Подробные инструкции:** См. [INSTALL_OPENSMILE_WINDOWS.md](INSTALL_OPENSMILE_WINDOWS.md)
 
 ### 4. Подготовка данных
 
@@ -164,15 +174,25 @@ python pipeline/run_full_pipeline.py
 **Параметры запуска:**
 
 ```bash
-# С GPU ускорением для транскрипции
+# С GPU ускорением для транскрипции (автоматически определит RTX 4090)
 python pipeline/run_full_pipeline.py --whisper-device cuda
 
+# Для RTX 4090 с оптимальными настройками
+python pipeline/run_full_pipeline.py \
+    --whisper-device cuda \
+    --whisper-model large \
+    --whisper-batch-size 64 \
+    --whisper-compute-type float16 \
+    --mode gpu
+
 # Пропустить определенные этапы (если уже выполнены)
-python pipeline/run_full_pipeline.py --skip-audio --skip-transcription
+python pipeline/run_full_pipeline.py --skip-transcription
 
 # Использовать другую модель Whisper
 python pipeline/run_full_pipeline.py --whisper-model large --whisper-language ru
 ```
+
+**Для Windows с RTX 4090:** См. [GPU_SETUP_WINDOWS.md](GPU_SETUP_WINDOWS.md) для подробных инструкций.
 
 **Доступные опции:**
 - `--skip-audio` - пропустить извлечение аудио
@@ -379,11 +399,22 @@ Streamlit приложение предоставляет:
 ## 🐛 Решение проблем
 
 ### Ошибка "SMILExtract не найден"
+
+**Linux/macOS:**
 Убедитесь, что openSMILE собран:
 ```bash
 cd opensmile/build
 make
 ```
+
+**Windows:**
+1. Проверьте, что `SMILExtract.exe` находится в одном из ожидаемых мест:
+   - `opensmile/build/progsrc/smilextract/Release/SMILExtract.exe` (если собрано)
+   - `opensmile/bin/SMILExtract.exe` (если использованы готовые бинарники)
+   
+2. Если бинарник не найден:
+   - **Рекомендуется:** Скачайте готовый бинарник с [GitHub Releases](https://github.com/audeering/opensmile/releases)
+   - **Альтернатива:** Соберите из исходников (см. [INSTALL_OPENSMILE_WINDOWS.md](INSTALL_OPENSMILE_WINDOWS.md))
 
 ### Ошибка "FFmpeg не найден"
 Установите FFmpeg и добавьте в PATH.

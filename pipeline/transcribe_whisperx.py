@@ -18,27 +18,67 @@ import whisperx
 def detect_environment():
     """
     Определяет тип окружения и возвращает оптимальные настройки.
+    Автоматически определяет наличие GPU и оптимизирует параметры.
     
     Returns:
         dict с настройками для окружения
     """
+    import torch
+    
     is_mac = platform.system() == 'Darwin'
     total_memory_gb = psutil.virtual_memory().total / (1024**3)
     cpu_count = psutil.cpu_count()
+    
+    has_cuda = torch.cuda.is_available()
+    if has_cuda:
+        gpu_name = torch.cuda.get_device_name(0)
+        gpu_memory_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+        
+        if '4090' in gpu_name or gpu_memory_gb >= 20:
+            return {
+                'mode': 'gpu',
+                'default_model': 'large',
+                'batch_size': 64,
+                'compute_type': 'float16',
+                'description': f'Мощный GPU ({gpu_name}, {gpu_memory_gb:.1f}GB)',
+                'device': 'cuda'
+            }
+        elif gpu_memory_gb >= 8:
+            return {
+                'mode': 'gpu',
+                'default_model': 'large',
+                'batch_size': 32,
+                'compute_type': 'float16',
+                'description': f'GPU ({gpu_name}, {gpu_memory_gb:.1f}GB)',
+                'device': 'cuda'
+            }
+        else:
+            return {
+                'mode': 'gpu',
+                'default_model': 'medium',
+                'batch_size': 16,
+                'compute_type': 'float16',
+                'description': f'GPU ({gpu_name}, {gpu_memory_gb:.1f}GB)',
+                'device': 'cuda'
+            }
     
     if is_mac or total_memory_gb < 16:
         return {
             'mode': 'lightweight',
             'default_model': 'medium',
             'batch_size': 4,
-            'description': 'MacBook / ограниченная память'
+            'compute_type': 'int8',
+            'description': 'MacBook / ограниченная память',
+            'device': 'cpu'
         }
     else:
         return {
             'mode': 'server',
             'default_model': 'medium',
             'batch_size': 16,
-            'description': 'Сервер / мощный компьютер'
+            'compute_type': 'int8',
+            'description': 'Сервер / мощный компьютер',
+            'device': 'cpu'
         }
 
 
@@ -118,8 +158,9 @@ def batch_transcribe(
     output_dir: str,
     model_name: str = None,
     language: str = "ru",
-    device: str = "cpu",
+    device: str = None,
     batch_size: int = None,
+    compute_type: str = None,
     mode: str = None
 ) -> None:
     """
@@ -130,9 +171,10 @@ def batch_transcribe(
         output_dir: Директория для сохранения JSON транскрипций
         model_name: Название модели Whisper (None = автоопределение)
         language: Язык аудио
-        device: Устройство для обработки
+        device: Устройство для обработки (None = автоопределение)
         batch_size: Размер батча (None = автоопределение)
-        mode: Режим работы ('lightweight' или 'server', None = автоопределение)
+        compute_type: Тип вычислений (None = автоопределение)
+        mode: Режим работы ('lightweight', 'server', 'gpu' или None = автоопределение)
     """
     env = detect_environment()
     
@@ -140,21 +182,44 @@ def batch_transcribe(
         env['mode'] = 'lightweight'
         env['default_model'] = 'medium'
         env['batch_size'] = 4
+        env['compute_type'] = 'int8'
+        env['device'] = 'cpu'
     elif mode == 'server':
         env['mode'] = 'server'
         env['default_model'] = 'medium'
         env['batch_size'] = 16
+        env['compute_type'] = 'int8'
+        env['device'] = 'cpu'
+    elif mode == 'gpu':
+        env['mode'] = 'gpu'
+        env['default_model'] = 'large'
+        env['batch_size'] = 64
+        env['compute_type'] = 'float16'
+        env['device'] = 'cuda'
     
     if model_name is None:
         model_name = env['default_model']
     
+    if device is None:
+        device = env.get('device', 'cpu')
+    
     if batch_size is None:
         batch_size = env['batch_size']
     
+    if compute_type is None:
+        compute_type = env.get('compute_type', 'int8' if device == 'cpu' else 'float16')
+    
     print(f"\n{'='*60}")
     print(f"Режим работы: {env['description']}")
+    print(f"Устройство: {device.upper()}")
     print(f"Модель: {model_name}")
     print(f"Batch size: {batch_size}")
+    print(f"Compute type: {compute_type}")
+    if device == 'cuda':
+        import torch
+        if torch.cuda.is_available():
+            print(f"GPU: {torch.cuda.get_device_name(0)}")
+            print(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / (1024**3):.1f} GB")
     print(f"{'='*60}\n")
     
     input_path = Path(input_dir)
@@ -186,6 +251,7 @@ def batch_transcribe(
             model_name=model_name,
             language=language,
             device=device,
+            compute_type=compute_type,
             batch_size=batch_size
         ):
             success_count += 1
@@ -227,22 +293,29 @@ def main():
     parser.add_argument(
         '--device',
         type=str,
-        default='cpu',
+        default=None,
         choices=['cpu', 'cuda'],
-        help='Устройство для обработки'
+        help='Устройство для обработки (None = автоопределение, рекомендуется для GPU)'
     )
     parser.add_argument(
         '--batch-size',
         type=int,
         default=None,
-        help='Размер батча (None = автоопределение по окружению)'
+        help='Размер батча (None = автоопределение по окружению, для RTX 4090 рекомендуется 64)'
+    )
+    parser.add_argument(
+        '--compute-type',
+        type=str,
+        default=None,
+        choices=['int8', 'float16', 'float32'],
+        help='Тип вычислений (None = автоопределение, float16 для GPU, int8 для CPU)'
     )
     parser.add_argument(
         '--mode',
         type=str,
         default=None,
-        choices=['lightweight', 'server'],
-        help='Режим работы: lightweight (MacBook) или server (мощный сервер)'
+        choices=['lightweight', 'server', 'gpu'],
+        help='Режим работы: lightweight (MacBook), server (CPU сервер), gpu (мощный GPU)'
     )
     
     args = parser.parse_args()
@@ -254,6 +327,7 @@ def main():
         language=args.language,
         device=args.device,
         batch_size=args.batch_size,
+        compute_type=args.compute_type,
         mode=args.mode
     )
 
