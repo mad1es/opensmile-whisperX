@@ -172,11 +172,12 @@ def merge_features(
 ) -> pd.DataFrame:
     """
     Объединяет все признаки в единый датасет.
+    Метки берутся из структуры данных (уже присутствуют в segments_metadata и opensmile_features).
     
     Args:
         segments_metadata_path: Путь к CSV с метаданными сегментов
         opensmile_features_path: Путь к CSV с признаками openSMILE
-        metadata_path: Путь к CSV с метаданными видео (id, label)
+        metadata_path: Путь к CSV с метаданными (опционально, для обратной совместимости)
         output_path: Путь для сохранения объединенного датасета
         language: Язык текста
         
@@ -202,47 +203,38 @@ def merge_features(
             merged_df = pd.concat([existing_merged[~existing_merged['file_id'].isin(new_file_ids)], merged_df], ignore_index=True)
         else:
             merged_df = pd.concat([existing_merged, merged_df], ignore_index=True)
-            print(f"Добавлено {len(new_file_ids)} новых видео к существующим {len(existing_file_ids)}")
+            print(f"Добавлено {len(new_file_ids)} новых файлов к существующим {len(existing_file_ids)}")
     
     merged_df = add_text_features(merged_df, language=language)
+    
+    if 'label' not in merged_df.columns:
+        if 'label_x' in merged_df.columns:
+            merged_df['label'] = merged_df['label_x']
+            merged_df = merged_df.drop(columns=['label_x'])
+            if 'label_y' in merged_df.columns:
+                merged_df = merged_df.drop(columns=['label_y'])
+        elif 'label_y' in merged_df.columns:
+            merged_df['label'] = merged_df['label_y']
+            merged_df = merged_df.drop(columns=['label_y'])
     
     if metadata_path and os.path.exists(metadata_path):
         metadata_df = pd.read_csv(metadata_path)
         if 'id' in metadata_df.columns and 'file_id' not in metadata_df.columns:
             metadata_df = metadata_df.rename(columns={'id': 'file_id'})
         
-        if 'file_id' in metadata_df.columns:
-            output_metadata_path = Path(output_path).parent / 'metadata_all.csv'
-            
-            if output_metadata_path.exists():
-                existing_metadata = pd.read_csv(output_metadata_path)
-                if 'id' in existing_metadata.columns and 'file_id' not in existing_metadata.columns:
-                    existing_metadata = existing_metadata.rename(columns={'id': 'file_id'})
-                
-                combined_metadata = pd.concat([existing_metadata, metadata_df], ignore_index=True)
-                combined_metadata = combined_metadata.drop_duplicates(subset=['file_id'], keep='last')
-                combined_metadata.to_csv(output_metadata_path, index=False, encoding='utf-8')
-                metadata_df = combined_metadata
-                print(f"Метаданные объединены. Всего видео в metadata: {len(metadata_df)}")
-            else:
-                metadata_df.to_csv(output_metadata_path, index=False, encoding='utf-8')
-                print(f"Метаданные сохранены в {output_metadata_path}")
-            
+        if 'file_id' in metadata_df.columns and 'label' in metadata_df.columns:
             if 'label' in merged_df.columns:
                 merged_df = merged_df.drop(columns=['label'])
             
             merged_df = merged_df.merge(
-                metadata_df,
+                metadata_df[['file_id', 'label']],
                 on='file_id',
-                how='left',
-                suffixes=('', '_meta')
+                how='left'
             )
-            
-            if 'label_meta' in merged_df.columns:
-                merged_df['label'] = merged_df['label_meta']
-                merged_df = merged_df.drop(columns=['label_meta'])
-            elif 'label' not in merged_df.columns and 'label' in metadata_df.columns:
-                merged_df['label'] = merged_df.merge(metadata_df, on='file_id', how='left')['label']
+            print(f"Метки загружены из metadata.csv для {merged_df['label'].notna().sum()} записей")
+    
+    if 'label' not in merged_df.columns:
+        print("Предупреждение: метки не найдены в данных. Проверьте структуру папок.")
     
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     merged_df.to_csv(output_path, index=False, encoding='utf-8')
@@ -250,7 +242,9 @@ def merge_features(
     print(f"Объединенный датасет сохранен в {output_path}")
     print(f"Всего строк: {len(merged_df)}")
     print(f"Всего признаков: {len(merged_df.columns)}")
-    print(f"Уникальных видео: {merged_df['file_id'].nunique()}")
+    print(f"Уникальных файлов: {merged_df['file_id'].nunique()}")
+    if 'label' in merged_df.columns:
+        print(f"Распределение меток: {merged_df['label'].value_counts().to_dict()}")
     
     return merged_df
 
@@ -317,7 +311,7 @@ def main():
         '--metadata',
         type=str,
         default=None,
-        help='Путь к метаданным видео (id, label)'
+        help='Путь к метаданным видео (id, label) - опционально, метки берутся из структуры папок'
     )
     parser.add_argument(
         '--output',

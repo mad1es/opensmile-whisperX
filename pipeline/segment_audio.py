@@ -32,6 +32,7 @@ def create_segments_from_transcript(
     transcript: dict,
     audio_path: str,
     output_dir: str,
+    file_id: str = None,
     min_segment_duration: float = 2.0,
     max_segment_duration: float = 5.0,
     overlap: float = 0.0
@@ -43,6 +44,7 @@ def create_segments_from_transcript(
         transcript: Словарь с данными транскрипции WhisperX
         audio_path: Путь к исходному аудио файлу
         output_dir: Директория для сохранения сегментов
+        file_id: Уникальный идентификатор файла (если None, берется из имени файла)
         min_segment_duration: Минимальная длительность сегмента (сек)
         max_segment_duration: Максимальная длительность сегмента (сек)
         overlap: Перекрытие между сегментами (сек)
@@ -53,7 +55,8 @@ def create_segments_from_transcript(
     os.makedirs(output_dir, exist_ok=True)
     
     audio = AudioSegment.from_wav(audio_path)
-    file_id = Path(audio_path).stem
+    if file_id is None:
+        file_id = Path(audio_path).stem
     
     segments_metadata = []
     
@@ -157,11 +160,11 @@ def batch_segment_audio(
     max_segment_duration: float = 5.0
 ) -> None:
     """
-    Пакетная сегментация всех аудио файлов.
+    Пакетная сегментация всех аудио файлов из подпапок 0 и 1.
     
     Args:
-        audio_dir: Директория с WAV файлами
-        transcript_dir: Директория с JSON транскрипциями
+        audio_dir: Директория с подпапками 0 и 1, содержащими WAV файлы
+        transcript_dir: Директория с подпапками 0 и 1, содержащими JSON транскрипции
         output_base_dir: Базовая директория для сохранения сегментов
         min_segment_duration: Минимальная длительность сегмента
         max_segment_duration: Максимальная длительность сегмента
@@ -170,33 +173,43 @@ def batch_segment_audio(
     transcript_path = Path(transcript_dir)
     output_path = Path(output_base_dir)
     
-    audio_files = list(audio_path.glob('*.wav'))
+    audio_files = []
+    for label_dir in ['0', '1']:
+        label_audio_path = audio_path / label_dir
+        label_transcript_path = transcript_path / label_dir
+        
+        if label_audio_path.exists() and label_audio_path.is_dir():
+            for audio_file in label_audio_path.glob('*.wav'):
+                transcript_file = label_transcript_path / f"{audio_file.stem}.json"
+                if transcript_file.exists():
+                    audio_files.append((audio_file, transcript_file, label_dir))
     
     if not audio_files:
-        print(f"Не найдено аудио файлов в {audio_dir}")
+        print(f"Не найдено аудио файлов с транскрипциями в {audio_dir}")
         return
+    
+    print(f"Найдено {len(audio_files)} аудио файлов с транскрипциями")
     
     all_segments = []
     
-    for audio_file in tqdm(audio_files, desc="Сегментация"):
-        transcript_file = transcript_path / f"{audio_file.stem}.json"
-        
-        if not transcript_file.exists():
-            print(f"Пропущен {audio_file.name}: нет транскрипции")
-            continue
-        
+    for audio_file, transcript_file, label_dir in tqdm(audio_files, desc="Сегментация"):
         transcript = load_whisper_transcript(str(transcript_file))
-        segment_output_dir = output_path / audio_file.stem
+        
+        file_id = f"{label_dir}_{audio_file.stem}"
+        segment_output_dir = output_path / label_dir / audio_file.stem
         
         segments_df = create_segments_from_transcript(
             transcript,
             str(audio_file),
             str(segment_output_dir),
+            file_id=file_id,
             min_segment_duration=min_segment_duration,
             max_segment_duration=max_segment_duration
         )
         
         if not segments_df.empty:
+            segments_df['label'] = int(label_dir)
+            segments_df['file_id'] = file_id
             all_segments.append(segments_df)
     
     if all_segments:
@@ -213,11 +226,11 @@ def batch_segment_audio(
                 combined_df = pd.concat([existing_df[~existing_df['file_id'].isin(new_file_ids)], combined_df], ignore_index=True)
             else:
                 combined_df = pd.concat([existing_df, combined_df], ignore_index=True)
-                print(f"Добавлено {len(new_file_ids)} новых видео к существующим {len(existing_file_ids)}")
+                print(f"Добавлено {len(new_file_ids)} новых файлов к существующим {len(existing_file_ids)}")
         
         combined_df.to_csv(metadata_path, index=False, encoding='utf-8')
         print(f"\nВсего сегментов: {len(combined_df)}")
-        print(f"Уникальных видео: {combined_df['file_id'].nunique()}")
+        print(f"Уникальных файлов: {combined_df['file_id'].nunique()}")
         print(f"Метаданные сохранены в {metadata_path}")
 
 
@@ -229,13 +242,13 @@ def main():
         '--audio-dir',
         type=str,
         default='data/audio_wav',
-        help='Директория с WAV файлами'
+        help='Директория с подпапками 0 и 1, содержащими WAV файлы'
     )
     parser.add_argument(
         '--transcript-dir',
         type=str,
         default='data/transcripts',
-        help='Директория с JSON транскрипциями'
+        help='Директория с подпапками 0 и 1, содержащими JSON транскрипции'
     )
     parser.add_argument(
         '--output-dir',

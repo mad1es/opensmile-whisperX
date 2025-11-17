@@ -123,10 +123,10 @@ def batch_transcribe(
     mode: str = None
 ) -> None:
     """
-    Пакетная транскрипция всех аудио файлов.
+    Пакетная транскрипция всех аудио файлов из подпапок 0 и 1.
     
     Args:
-        input_dir: Директория с WAV файлами
+        input_dir: Директория с подпапками 0 и 1, содержащими WAV файлы
         output_dir: Директория для сохранения JSON транскрипций
         model_name: Название модели Whisper (None = автоопределение)
         language: Язык аудио
@@ -160,17 +160,25 @@ def batch_transcribe(
     input_path = Path(input_dir)
     output_path = Path(output_dir)
     
-    audio_files = list(input_path.glob('*.wav'))
+    audio_files = []
+    for label_dir in ['0', '1']:
+        label_path = input_path / label_dir
+        if label_path.exists() and label_path.is_dir():
+            audio_files.extend([
+                (f, label_dir) for f in label_path.glob('*.wav')
+            ])
     
     if not audio_files:
-        print(f"Не найдено аудио файлов в {input_dir}")
+        print(f"Не найдено аудио файлов в подпапках 0 и 1 директории {input_dir}")
         return
     
     print(f"Найдено {len(audio_files)} аудио файлов")
     
     success_count = 0
-    for audio_file in tqdm(audio_files, desc="Транскрипция"):
-        output_file = output_path / f"{audio_file.stem}.json"
+    for audio_file, label_dir in tqdm(audio_files, desc="Транскрипция"):
+        output_subdir = output_path / label_dir
+        output_subdir.mkdir(parents=True, exist_ok=True)
+        output_file = output_subdir / f"{audio_file.stem}.json"
         
         if transcribe_audio(
             str(audio_file),
@@ -195,7 +203,7 @@ def main():
         '--input-dir',
         type=str,
         default='data/audio_wav',
-        help='Директория с WAV файлами'
+        help='Директория с подпапками 0 и 1, содержащими WAV файлы'
     )
     parser.add_argument(
         '--output-dir',

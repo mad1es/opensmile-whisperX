@@ -1,8 +1,14 @@
 """
 Главный скрипт для запуска полного пайплайна обработки данных.
 
-Автоматически выполняет все этапы обработки от извлечения аудио
+Автоматически выполняет все этапы обработки от транскрипции аудио
 до обучения модели и создания визуализаций.
+
+Ожидаемая структура данных:
+- data/audio_wav/0/ - контрольные аудио файлы (WAV)
+- data/audio_wav/1/ - суицидные аудио файлы (WAV)
+
+Метки автоматически определяются из структуры папок.
 """
 
 import os
@@ -97,11 +103,6 @@ def main():
         description='Запуск полного пайплайна обработки данных'
     )
     parser.add_argument(
-        '--skip-audio',
-        action='store_true',
-        help='Пропустить извлечение аудио'
-    )
-    parser.add_argument(
         '--skip-transcription',
         action='store_true',
         help='Пропустить транскрипцию'
@@ -191,19 +192,26 @@ def main():
     base_dir = Path(args.data_dir)
     pipeline_dir = Path('pipeline')
     
+    audio_wav_dir = base_dir / 'audio_wav'
+    
+    if not audio_wav_dir.exists():
+        print(f"Ошибка: директория {audio_wav_dir} не найдена")
+        print("Убедитесь, что аудио файлы находятся в data/audio_wav/0/ и data/audio_wav/1/")
+        sys.exit(1)
+    
+    label_dirs = [audio_wav_dir / '0', audio_wav_dir / '1']
+    found_labels = [d for d in label_dirs if d.exists() and d.is_dir()]
+    
+    if not found_labels:
+        print(f"Ошибка: не найдены подпапки 0 и 1 в {audio_wav_dir}")
+        print("Структура должна быть: data/audio_wav/0/ и data/audio_wav/1/")
+        sys.exit(1)
+    
+    print(f"Найдены метки: {[d.name for d in found_labels]}")
+    
     success = True
     
-    if not args.skip_audio:
-        success &= run_command(
-            [
-                'python', str(pipeline_dir / 'extract_audio.py'),
-                '--input-dir', str(base_dir / 'raw_videos'),
-                '--output-dir', str(base_dir / 'audio_wav')
-            ],
-            'Извлечение аудио из видео'
-        )
-    
-    if success and not args.skip_transcription:
+    if not args.skip_transcription:
         transcribe_cmd = [
             'python', str(pipeline_dir / 'transcribe_whisperx.py'),
             '--input-dir', str(base_dir / 'audio_wav'),
@@ -240,7 +248,6 @@ def main():
         )
     
     if success and not args.skip_merge:
-        metadata_path = base_dir / 'metadata.csv'
         merge_cmd = [
             'python', str(pipeline_dir / 'merge_features.py'),
             '--segments-metadata', str(base_dir / 'segments' / 'segments_metadata.csv'),
@@ -250,8 +257,10 @@ def main():
             '--aggregate'
         ]
         
+        metadata_path = base_dir / 'metadata.csv'
         if metadata_path.exists():
             merge_cmd.extend(['--metadata', str(metadata_path)])
+            print(f"Найден metadata.csv, будет использован для дополнительных меток")
         
         success &= run_command(
             merge_cmd,

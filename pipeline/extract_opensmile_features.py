@@ -191,7 +191,7 @@ def batch_extract_features(
     Пакетное извлечение признаков из всех сегментов.
     
     Args:
-        segments_dir: Директория с сегментами аудио
+        segments_dir: Директория с подпапками 0 и 1, содержащими сегменты аудио
         output_dir: Директория для сохранения признаков
         opensmile_dir: Директория с openSMILE
         
@@ -210,26 +210,34 @@ def batch_extract_features(
     
     all_features = []
     
-    video_dirs = [d for d in segments_path.iterdir() if d.is_dir()]
-    
-    for video_dir in tqdm(video_dirs, desc="Извлечение признаков"):
-        segment_files = list(video_dir.glob('segment_*.wav'))
+    for label_dir in ['0', '1']:
+        label_segments_path = segments_path / label_dir
+        if not label_segments_path.exists() or not label_segments_path.is_dir():
+            continue
         
-        for segment_file in segment_files:
-            segment_id = f"{video_dir.name}_{segment_file.stem}"
-            output_csv = output_path / f"{segment_id}.csv"
+        file_dirs = [d for d in label_segments_path.iterdir() if d.is_dir()]
+        
+        for file_dir in tqdm(file_dirs, desc=f"Извлечение признаков (label={label_dir})"):
+            segment_files = list(file_dir.glob('segment_*.wav'))
             
-            if extract_features_opensmile(
-                str(segment_file),
-                str(output_csv),
-                smilextract_path,
-                config_path
-            ):
-                features = parse_opensmile_csv(str(output_csv))
-                if features:
-                    features['segment_id'] = segment_id
-                    features['file_id'] = video_dir.name
-                    all_features.append(features)
+            file_id = f"{label_dir}_{file_dir.name}"
+            
+            for segment_file in segment_files:
+                segment_id = f"{file_id}_{segment_file.stem}"
+                output_csv = output_path / f"{segment_id}.csv"
+                
+                if extract_features_opensmile(
+                    str(segment_file),
+                    str(output_csv),
+                    smilextract_path,
+                    config_path
+                ):
+                    features = parse_opensmile_csv(str(output_csv))
+                    if features:
+                        features['segment_id'] = segment_id
+                        features['file_id'] = file_id
+                        features['label'] = int(label_dir)
+                        all_features.append(features)
     
     if all_features:
         features_df = pd.DataFrame(all_features)
@@ -245,7 +253,7 @@ def batch_extract_features(
                 features_df = pd.concat([existing_df[~existing_df['file_id'].isin(new_file_ids)], features_df], ignore_index=True)
             else:
                 features_df = pd.concat([existing_df, features_df], ignore_index=True)
-                print(f"Добавлено {len(new_file_ids)} новых видео к существующим {len(existing_file_ids)}")
+                print(f"Добавлено {len(new_file_ids)} новых файлов к существующим {len(existing_file_ids)}")
         
         return features_df
     else:
@@ -263,7 +271,7 @@ def main():
         '--segments-dir',
         type=str,
         default='data/segments',
-        help='Директория с сегментами аудио'
+        help='Директория с подпапками 0 и 1, содержащими сегменты аудио'
     )
     parser.add_argument(
         '--output-dir',

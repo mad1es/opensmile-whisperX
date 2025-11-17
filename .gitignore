@@ -24,9 +24,29 @@ env/
 ENV/
 
 # Данные
+# Игнорируем raw_videos (больше не используется, но оставляем для совместимости)
+data/raw_videos/*
 
+# Игнорируем содержимое папок с данными, но сохраняем структуру через .gitkeep
+data/audio_wav/**/*
+!data/audio_wav/.gitkeep
+data/transcripts/**/*
+!data/transcripts/.gitkeep
+data/segments/**/*
+!data/segments/.gitkeep
+data/features/**/*
+!data/features/.gitkeep
+data/results/**/*
+!data/results/.gitkeep
+data/models/**/*
+!data/models/.gitkeep
+
+# Сохраняем структуру папок и примеры
 !data/.gitkeep
 !data/metadata.csv.example
+
+# metadata.csv опционален (метки берутся из структуры папок 0/1)
+data/metadata.csv
 
 # Jupyter Notebook
 .ipynb_checkpoints
