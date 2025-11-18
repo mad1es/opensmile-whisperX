@@ -159,10 +159,31 @@ def main():
         choices=['cpu', 'cuda'],
         help='Устройство для Whisper'
     )
+    parser.add_argument(
+        '--whisper-compute-type',
+        type=str,
+        default=None,
+        choices=['int8', 'float16', 'float32'],
+        help='Тип вычислений для Whisper (None = авто: int8 для CPU, float16 для CUDA)'
+    )
+    parser.add_argument(
+        '--whisper-batch-size',
+        type=int,
+        default=None,
+        help='Размер батча для Whisper (None = автоопределение)'
+    )
     
     args = parser.parse_args()
     
     env = detect_environment()
+    
+    # Проверка наличия CUDA для определения оптимального batch_size
+    try:
+        import torch
+        has_cuda = torch.cuda.is_available() and args.whisper_device == 'cuda'
+    except ImportError:
+        has_cuda = False
+    
     if args.mode:
         env['mode'] = args.mode
         if args.mode == 'lightweight':
@@ -170,7 +191,8 @@ def main():
             env['batch_size'] = 4
         else:
             env['default_model'] = 'medium'
-            env['batch_size'] = 16
+            # Для серверного режима с CUDA используем больший batch_size
+            env['batch_size'] = 64 if has_cuda else 16
     
     if args.whisper_model is None:
         args.whisper_model = env['default_model']
@@ -181,6 +203,19 @@ def main():
     print(f"Окружение: {env['description']}")
     print(f"Режим: {env['mode']}")
     print(f"Модель Whisper: {args.whisper_model}")
+    print(f"Устройство: {args.whisper_device}")
+    if args.whisper_compute_type:
+        print(f"Compute type: {args.whisper_compute_type}")
+    if args.whisper_batch_size:
+        print(f"Batch size: {args.whisper_batch_size}")
+    elif has_cuda:
+        print(f"Batch size: {env['batch_size']} (авто для CUDA)")
+    if has_cuda:
+        try:
+            import torch
+            print(f"GPU: {torch.cuda.get_device_name(0)}")
+        except:
+            pass
     print("="*60)
     
     if not check_dependencies():
@@ -220,6 +255,10 @@ def main():
             '--language', args.whisper_language,
             '--device', args.whisper_device
         ]
+        if args.whisper_compute_type:
+            transcribe_cmd.extend(['--compute-type', args.whisper_compute_type])
+        if args.whisper_batch_size:
+            transcribe_cmd.extend(['--batch-size', str(args.whisper_batch_size)])
         if args.mode:
             transcribe_cmd.extend(['--mode', args.mode])
         

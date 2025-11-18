@@ -26,6 +26,13 @@ def detect_environment():
     total_memory_gb = psutil.virtual_memory().total / (1024**3)
     cpu_count = psutil.cpu_count()
     
+    # Проверка наличия CUDA
+    try:
+        import torch
+        has_cuda = torch.cuda.is_available()
+    except ImportError:
+        has_cuda = False
+    
     if is_mac or total_memory_gb < 16:
         return {
             'mode': 'lightweight',
@@ -34,10 +41,12 @@ def detect_environment():
             'description': 'MacBook / ограниченная память'
         }
     else:
+        # Для серверного режима с CUDA используем больший batch_size
+        batch_size = 64 if has_cuda else 16
         return {
             'mode': 'server',
             'default_model': 'medium',
-            'batch_size': 16,
+            'batch_size': batch_size,
             'description': 'Сервер / мощный компьютер'
         }
 
@@ -119,6 +128,7 @@ def batch_transcribe(
     model_name: str = None,
     language: str = "ru",
     device: str = "cpu",
+    compute_type: str = None,
     batch_size: int = None,
     mode: str = None
 ) -> None:
@@ -131,10 +141,18 @@ def batch_transcribe(
         model_name: Название модели Whisper (None = автоопределение)
         language: Язык аудио
         device: Устройство для обработки
+        compute_type: Тип вычислений (None = автоопределение: int8 для CPU, float16 для CUDA)
         batch_size: Размер батча (None = автоопределение)
         mode: Режим работы ('lightweight' или 'server', None = автоопределение)
     """
     env = detect_environment()
+    
+    # Проверка наличия CUDA для определения оптимального batch_size
+    try:
+        import torch
+        has_cuda = torch.cuda.is_available() and device == 'cuda'
+    except ImportError:
+        has_cuda = False
     
     if mode == 'lightweight':
         env['mode'] = 'lightweight'
@@ -143,7 +161,8 @@ def batch_transcribe(
     elif mode == 'server':
         env['mode'] = 'server'
         env['default_model'] = 'medium'
-        env['batch_size'] = 16
+        # Для серверного режима с CUDA используем больший batch_size
+        env['batch_size'] = 64 if has_cuda else 16
     
     if model_name is None:
         model_name = env['default_model']
@@ -151,9 +170,14 @@ def batch_transcribe(
     if batch_size is None:
         batch_size = env['batch_size']
     
+    if compute_type is None:
+        compute_type = 'int8' if device == 'cpu' else 'float16'
+    
     print(f"\n{'='*60}")
     print(f"Режим работы: {env['description']}")
     print(f"Модель: {model_name}")
+    print(f"Устройство: {device}")
+    print(f"Compute type: {compute_type}")
     print(f"Batch size: {batch_size}")
     print(f"{'='*60}\n")
     
@@ -186,6 +210,7 @@ def batch_transcribe(
             model_name=model_name,
             language=language,
             device=device,
+            compute_type=compute_type,
             batch_size=batch_size
         ):
             success_count += 1
@@ -232,6 +257,13 @@ def main():
         help='Устройство для обработки'
     )
     parser.add_argument(
+        '--compute-type',
+        type=str,
+        default=None,
+        choices=['int8', 'float16', 'float32'],
+        help='Тип вычислений (None = авто: int8 для CPU, float16 для CUDA)'
+    )
+    parser.add_argument(
         '--batch-size',
         type=int,
         default=None,
@@ -253,6 +285,7 @@ def main():
         model_name=args.model,
         language=args.language,
         device=args.device,
+        compute_type=args.compute_type,
         batch_size=args.batch_size,
         mode=args.mode
     )
