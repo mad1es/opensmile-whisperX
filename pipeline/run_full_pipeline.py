@@ -142,9 +142,9 @@ def main():
     parser.add_argument(
         '--mode',
         type=str,
-        default=None,
+        default='server',
         choices=['lightweight', 'server'],
-        help='Режим работы: lightweight (MacBook) или server (мощный сервер). None = автоопределение'
+        help='Режим работы: lightweight (MacBook) или server (мощный CPU, по умолчанию)'
     )
     parser.add_argument(
         '--whisper-language',
@@ -155,35 +155,41 @@ def main():
     parser.add_argument(
         '--whisper-device',
         type=str,
-        default=None,
+        default='cpu',
         choices=['cpu', 'cuda'],
-        help='Устройство для Whisper (None = автоопределение, рекомендуется для GPU)'
+        help='Устройство для Whisper (по умолчанию: cpu)'
     )
     parser.add_argument(
         '--whisper-batch-size',
         type=int,
         default=None,
-        help='Размер батча для Whisper (None = автоопределение, для RTX 4090 рекомендуется 64)'
+        help='Размер батча для Whisper (None = автоопределение: 32 для CPU)'
     )
     parser.add_argument(
         '--whisper-compute-type',
         type=str,
         default=None,
         choices=['int8', 'float16', 'float32'],
-        help='Тип вычислений для Whisper (None = автоопределение)'
+        help='Тип вычислений для Whisper (None = авто: int8 для CPU)'
     )
     
     args = parser.parse_args()
     
     env = detect_environment()
-    if args.mode:
-        env['mode'] = args.mode
-        if args.mode == 'lightweight':
-            env['default_model'] = 'medium'
-            env['batch_size'] = 4
-        else:
-            env['default_model'] = 'medium'
-            env['batch_size'] = 16
+    
+    # Принудительно используем CPU режим
+    if args.whisper_device != 'cuda':
+        args.whisper_device = 'cpu'
+    
+    # Определяем оптимальный batch_size для CPU
+    if args.mode == 'lightweight':
+        env['mode'] = 'lightweight'
+        env['default_model'] = 'medium'
+        env['batch_size'] = 4
+    else:  # server mode
+        env['mode'] = 'server'
+        env['default_model'] = 'medium'
+        env['batch_size'] = 32  # Оптимальный batch_size для мощного CPU
     
     if args.whisper_model is None:
         args.whisper_model = env['default_model']
@@ -194,6 +200,15 @@ def main():
     print(f"Окружение: {env['description']}")
     print(f"Режим: {env['mode']}")
     print(f"Модель Whisper: {args.whisper_model}")
+    print(f"Устройство: {args.whisper_device.upper()}")
+    if args.whisper_compute_type:
+        print(f"Compute type: {args.whisper_compute_type}")
+    else:
+        print(f"Compute type: int8 (авто для CPU)")
+    if args.whisper_batch_size:
+        print(f"Batch size: {args.whisper_batch_size}")
+    else:
+        print(f"Batch size: {env['batch_size']} (авто для {args.whisper_device.upper()})")
     print("="*60)
     
     if not check_dependencies():
@@ -230,20 +245,14 @@ def main():
             '--input-dir', str(base_dir / 'audio_wav'),
             '--output-dir', str(base_dir / 'transcripts'),
             '--model', args.whisper_model,
-            '--language', args.whisper_language
+            '--language', args.whisper_language,
+            '--device', args.whisper_device,
+            '--mode', args.mode
         ]
-        
-        if args.whisper_device:
-            transcribe_cmd.extend(['--device', args.whisper_device])
-        
-        if args.whisper_batch_size:
-            transcribe_cmd.extend(['--batch-size', str(args.whisper_batch_size)])
-        
         if args.whisper_compute_type:
             transcribe_cmd.extend(['--compute-type', args.whisper_compute_type])
-        
-        if args.mode:
-            transcribe_cmd.extend(['--mode', args.mode])
+        if args.whisper_batch_size:
+            transcribe_cmd.extend(['--batch-size', str(args.whisper_batch_size)])
         
         success &= run_command(transcribe_cmd, 'Транскрипция аудио')
     
